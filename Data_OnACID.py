@@ -40,38 +40,49 @@ logging.basicConfig(format=
                     level=logging.ERROR)
     # filename="/tmp/caiman.log"
 # %%
-def main():
+def run_CaImAn_mouse(pathMouse):
+  
+  for f in os.listdir(pathMouse):
+    if f.startswith("Session"):
+      pathSession = pathMouse + f + '/'
+      print("\t Session: "+pathSession)
+      run_CaImAn_session(pathSession)
+  
+  
+def run_CaImAn_session(pathSession):
+    
+    #plt.close('all')
     pass  # For compatibility between running under Spyder and the CLI
 
 # %% load data
     
-    pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01/"
-    #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M65/Session01/"
+    #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
+    #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01/"
+    fname = None
+    for f in os.listdir(pathSession):
+      if f.startswith("thy"):
+        fname = pathSession + f
+        if f.endswith('.h5'):
+          break
     
-    #fname = [os.path.join(caiman_datadir(), 'example_movies', 'demoMovie.tif')]
-    fnames = [pathSession + "thy1g7#879_hp_16x1.5x_113um_70v72v_67p_res_lave2_am_MF1_LK1.h5"]
-    #fname = [pathSession + "thy1g7#65_hp_16x1.5x_134um_102v107v_45p_res_lave2_am.tif"]
+    if not fname or not os.path.exists(fname):
+      print("No file here to process :(")
+      return
+      
+    
     svname = [pathSession + "results_OnACID.mat"]
 # %% set up some parameters
     
-    # set high threshold for neuron detection
-    # check right decay time
-    # check patch size & overlap consistency
-    # shouldnt p be 2? and shouldnt it be disabled during first pass of cnmf?
-    # shouldnt CNMF pass twice (or thrice)? -> how to?
-    # deconvolution should be made later
-    # which options are enabled during OnACID? do I need further alignment, ...?
-    
     border_thr = 5    # minimal distance of centroid to border
     
-    patch_size = 64  # size of patch
+    patch_size = 32  # size of patch
     stride = 4  # amount of overlap between patches
     
     # set up CNMF initialization parameters
     params_dict ={
             
             #general data
-            'fnames': fnames,
+            'fnames': fname,
             'fr': 15,
             'decay_time': 0.47,
             'gSig': [6, 6],  # expected half size of neurons
@@ -89,11 +100,11 @@ def main():
             'pw_rigid': True,                   # flag for performing pw-rigid motion correction
             
             #online
-            'init_batch': 200,                  # number of frames for initialization
+            'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 100,                 # update every shape at least once every update_freq steps
+            'update_freq': 200,                 # update every shape at least once every update_freq steps
             'n_refit': 1,
-            'epochs': 2,                        # number of times to go over data
+            'epochs': 2,                        # number of times to go over data, to refine shapes and temporal traces
             
             #quality
             'min_SNR': 2.5,                     # minimum SNR for accepting candidate components
@@ -110,71 +121,63 @@ def main():
             'movie_name_online': "test_mp4v.avi"
     }
     
-    os.environ['CAIMAN_DATA'] = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/CaImAn/caiman/caiman_data" ## setting proper path to cnn-model
-    
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     
-    if fnames[0].endswith('.h5'):
+    if fname.endswith('.h5'):
       opts.change_params({'motion_correct':False})
       opts.change_params({'pw_rigid':False})
+    else:
+      opts.change_params({'motion_correct':True})
+      opts.change_params({'pw_rigid':True})
     
 # %% fit with online object
     cnm = cnmf.online_cnmf.OnACID(params=opts)
-    cnm.fit_online()      ## passes twice, such that ROIs are refined
+    cnm.fit_online()
     
     cnm.estimates.evaluate_components_CNN(opts)
     
-    #idx_border = [] 
-    #for n in cnm.estimates.idx_components:
-      #if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (511-border_thr)).any(): 
-        #idx_border.append(n)
-     
-    #cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
-    #cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
+    logging.info('Number of components:' + str(cnm.estimates.A.shape[-1]))
+    
     
     #%% test this a little, so I can tell for sure, what is a good threshold
     
     #%% then, delete "bad" components from A, C and YrA before storing
     
-    
 # %% plot contours
-
-    logging.info('Number of components:' + str(cnm.estimates.A.shape[-1]))
+    Cn = cm.load(fname, subindices=slice(0,None,5)).local_correlations(swap_dim=False)
     
+# %% plot results
+    cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components)   ## need that one to get the coordinates
+    #cnm.estimates.view_components(img=Cn, idx=cnm.estimates.idx_components)
     
-    Cn = cm.load(fnames[0], subindices=slice(0,None,5)).local_correlations(swap_dim=False)
-    #print("calculated background -> done")
+    idx_border = [] 
+    for n in cnm.estimates.idx_components:
+      #print(n)
+      if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0] -border_thr)).any():
+        idx_border.append(n)
     
-    results = dict(A=cnm.estimates.A.todense(),
-                   C=cnm.estimates.C,
+    cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
+    cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
+    
+    idx_keep = cnm.estimates.idx_components
+    
+    results = dict(A=cnm.estimates.A[:,idx_keep].todense(),
+                   C=cnm.estimates.C[idx_keep,:],
                    Cn=Cn,
-                   YrA=cnm.estimates.YrA,
+                   YrA=cnm.estimates.YrA[idx_keep,:],
                    b=cnm.estimates.b,
-                   f=cnm.estimates.f,
-                   idx_components=cnm.estimates.idx_components)
+                   f=cnm.estimates.f)
     
     hdf5storage.write(results, '.', svname[0], matlab_compatible=True)
     
     
-    cnm.estimates.plot_contours(img=Cn)
-
-# %% pass through the CNN classifier with a low threshold (keeps clearer neuron shapes and excludes processes)
-    #use_CNN = True
-    #if use_CNN:
-        # threshold for CNN classifier
-        #opts.set('quality', {'min_cnn_thr': 0.05})
-        
-    cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components)
-# %% plot results
-    cnm.estimates.view_components(img=Cn, idx=cnm.estimates.idx_components)
-    
-    return cnm, Cn, opts
+    #return cnm, Cn, opts
 # %%
 # This is to mask the differences between running this demo in Spyder
 # versus from the CLI
-if __name__ == "__main__":
-    [cnm, Cn, opts] = main()
-
+#if __name__ == "__main__":
+    #[cnm, Cn, opts] = main()
+    #main()
 
 
       
