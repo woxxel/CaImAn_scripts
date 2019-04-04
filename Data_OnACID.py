@@ -45,7 +45,7 @@ def main():
 
 # %% load data
     
-    pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01/"
+    pathSession = "/home/aschmidt/Documents/Data/879/Session01/"
     #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M65/Session01/"
     
     #fname = [os.path.join(caiman_datadir(), 'example_movies', 'demoMovie.tif')]
@@ -64,7 +64,7 @@ def main():
     
     border_thr = 5    # minimal distance of centroid to border
     
-    patch_size = 64  # size of patch
+    patch_size = 32  # size of patch
     stride = 4  # amount of overlap between patches
     
     # set up CNMF initialization parameters
@@ -89,9 +89,9 @@ def main():
             'pw_rigid': True,                   # flag for performing pw-rigid motion correction
             
             #online
-            'init_batch': 200,                  # number of frames for initialization
+            'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 100,                 # update every shape at least once every update_freq steps
+            'update_freq': 300,                 # update every shape at least once every update_freq steps
             'n_refit': 1,
             'epochs': 2,                        # number of times to go over data
             
@@ -110,7 +110,7 @@ def main():
             'movie_name_online': "test_mp4v.avi"
     }
     
-    os.environ['CAIMAN_DATA'] = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/CaImAn/caiman/caiman_data" ## setting proper path to cnn-model
+    #os.environ['CAIMAN_DATA'] = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/CaImAn/caiman/caiman_data" ## setting proper path to cnn-model
     
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     
