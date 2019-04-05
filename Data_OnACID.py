@@ -47,8 +47,8 @@ def run_CaImAn_mouse(pathMouse):
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
       print("\t Session: "+pathSession)
-      run_CaImAn_session(pathSession)
-  
+      [cnm, Cn, opts] = run_CaImAn_session(pathSession)
+      return cnm, Cn, opts
   
 def run_CaImAn_session(pathSession):
     
@@ -74,13 +74,13 @@ def run_CaImAn_session(pathSession):
     svname = [pathSession + "results_OnACID.mat"]
     
     t_start = time.time()
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
-    fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C',border_to_0=0, dview=dview)  # exclude borders
-    cm.stop_server(dview=dview)
+    #c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    #fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, data_type=np.uint16, order='C',border_to_0=0, dview=dview)  # exclude borders
+    #cm.stop_server(dview=dview)
     
-    #fname_memmap = [pathSession1 + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"]
+    fname_memmap = [sv_dir + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"]
     
-    print(fname_memmap)
+    #print(fname_memmap)
 # %% set up some parameters
     
     border_thr = 5    # minimal distance of centroid to border
@@ -92,7 +92,7 @@ def run_CaImAn_session(pathSession):
     params_dict ={
             
             #general data
-            'fnames': fname_memmap,
+            'fnames': fname,#_memmap,
             'fr': 15,
             'decay_time': 0.47,
             'gSig': [6, 6],  # expected half size of neurons
@@ -112,7 +112,7 @@ def run_CaImAn_session(pathSession):
             #online
             'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 500,                 # update every shape at least once every update_freq steps
+            'update_freq': 1000,                 # update every shape at least once every update_freq steps
             'n_refit': 1,
             'epochs': 2,                        # number of times to go over data, to refine shapes and temporal traces
             
@@ -122,7 +122,7 @@ def run_CaImAn_session(pathSession):
             'sniper_mode': True,                # flag for using CNN
             'use_cnn': True,
             'thresh_CNN_noisy': 0.65,           # CNN threshold for candidate components
-            'min_cnn_thr': 0.99,                # threshold for CNN based classifier
+            'min_cnn_thr': 0.5,                # threshold for CNN based classifier
             'cnn_lowest': 0.1,                  # neurons with cnn probability lower than this value are rejected
             
             #display
@@ -144,7 +144,7 @@ def run_CaImAn_session(pathSession):
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     cnm.fit_online()
     
-    cnm.estimates.evaluate_components_CNN(opts)
+    #cnm.estimates.evaluate_components(opts)
     
     logging.info('Number of components:' + str(cnm.estimates.A.shape[-1]))
     
@@ -162,8 +162,7 @@ def run_CaImAn_session(pathSession):
     
     idx_border = [] 
     for n in cnm.estimates.idx_components:
-      #print(n)
-      if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0] -border_thr)).any():
+      if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0]-border_thr)).any():
         idx_border.append(n)
     
     cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
@@ -183,8 +182,8 @@ def run_CaImAn_session(pathSession):
     t_end = time.time()
     print("total time taken: " +  str(t_end-t_start))
     
-    os.remove(fname_memmap)
-    #return cnm, Cn, opts
+    #os.remove(fname_memmap)
+    return cnm, Cn, opts
 # %%
 # This is to mask the differences between running this demo in Spyder
 # versus from the CLI
