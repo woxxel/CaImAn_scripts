@@ -15,6 +15,7 @@ import numpy as np
 import scipy as sp
 import os
 import hdf5storage
+import time
 
 import caiman as cm
 from caiman.source_extraction import cnmf as cnmf
@@ -57,7 +58,8 @@ def run_CaImAn_session(pathSession):
 # %% load data
     
     #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
-    #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01/"
+    sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
+    
     fname = None
     for f in os.listdir(pathSession):
       if f.startswith("thy"):
@@ -68,9 +70,17 @@ def run_CaImAn_session(pathSession):
     if not fname or not os.path.exists(fname):
       print("No file here to process :(")
       return
-      
     
     svname = [pathSession + "results_OnACID.mat"]
+    
+    t_start = time.time()
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C',border_to_0=0, dview=dview)  # exclude borders
+    cm.stop_server(dview=dview)
+    
+    #fname_memmap = [pathSession1 + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"]
+    
+    print(fname_memmap)
 # %% set up some parameters
     
     border_thr = 5    # minimal distance of centroid to border
@@ -82,7 +92,7 @@ def run_CaImAn_session(pathSession):
     params_dict ={
             
             #general data
-            'fnames': fname,
+            'fnames': fname_memmap,
             'fr': 15,
             'decay_time': 0.47,
             'gSig': [6, 6],  # expected half size of neurons
@@ -102,7 +112,7 @@ def run_CaImAn_session(pathSession):
             #online
             'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 200,                 # update every shape at least once every update_freq steps
+            'update_freq': 500,                 # update every shape at least once every update_freq steps
             'n_refit': 1,
             'epochs': 2,                        # number of times to go over data, to refine shapes and temporal traces
             
@@ -122,7 +132,7 @@ def run_CaImAn_session(pathSession):
     }
     
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
-    
+       
     if fname.endswith('.h5'):
       opts.change_params({'motion_correct':False})
       opts.change_params({'pw_rigid':False})
@@ -170,7 +180,10 @@ def run_CaImAn_session(pathSession):
     
     hdf5storage.write(results, '.', svname[0], matlab_compatible=True)
     
+    t_end = time.time()
+    print("total time taken: " +  str(t_end-t_start))
     
+    os.remove(fname_memmap)
     #return cnm, Cn, opts
 # %%
 # This is to mask the differences between running this demo in Spyder
