@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import caiman as cm
 from caiman.source_extraction import cnmf as cnmf
 from caiman.paths import caiman_datadir
-
+from caiman.motion_correction import MotionCorrect
 
 try:
     if __IPYTHON__:
@@ -49,8 +49,8 @@ def run_CaImAn_mouse(pathMouse,onAcid=False):
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
       print("\t Session: "+pathSession)
-      run_CaImAn_session(pathSession,onAcid=onAcid)
-      #return cnm, Cn, opts
+      [cnm, Cn, opts] = run_CaImAn_session(pathSession,onAcid=onAcid)
+      return cnm, Cn, opts
   
 def run_CaImAn_session(pathSession,onAcid=False):
     
@@ -72,22 +72,17 @@ def run_CaImAn_session(pathSession,onAcid=False):
       print("No file here to process :(")
       return
     
-    svname = [pathSession + "results_OnACID.mat"]
+    svname = pathSession + "results_OnACID.mat"
+    svname_h5 = pathSession + "results_OnACID.hdf5"
     
     t_start = time.time()
     border_thr = 5         # minimal distance of centroid to border
-    
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
-    fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
-    #fname_memmap = sv_dir + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"
-    cm.stop_server(dview=dview)      ## restart server to clean up memory
-    
     
     # set up CNMF parameters
     params_dict ={
             
             #general data
-            'fnames': [fname_memmap],
+            'fnames': [fname],
             'fr': 15,
             'decay_time': 0.47,
             'gSig': [6, 6],                     # expected half size of neurons
@@ -97,31 +92,28 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'K': 200,                           # max number of components in each patch
             'nb': 2,                            # number of background components per patch
             'p': 0,                             # order of AR indicator dynamics
-            'ds_factor': 1,
+            'stride': 8,
             
             # init
             'ssub': 2,                          # spatial subsampling during initialization
-            'tsub': 2,                          # temporal subsampling during initialization
+            'tsub': 5,                          # temporal subsampling during initialization
             
-            #motion
-            #'dxy': dxy,                     
-            'stride': 8,
+            #motion                
             'motion_correct': False,
             'pw_rigid': False,
-            
-            #'max_shifts': [int(a/b) for a, b in zip(max_shift_um, dxy)],          # maximum allowed rigid shift in pixels
-            #'stride': tuple([int(a/b) for a, b in zip(patch_motion_um, dxy)]),    # start a new patch for pw-rigid motion correction every x pixels
-            'overlaps': (8, 8),               # overlap between patches (size of patch in pixels: strides+overlaps)
-            'max_deviation_rigid': 3,           # maximum deviation allowed for patch with respect to rigid shifts
+            'strides': 96,
+            'max_shifts': 12,          # maximum allowed rigid shift in pixels
+            'overlaps': 24,               # overlap between patches (size of patch in pixels: strides+overlaps)
+            'max_deviation_rigid': 12,           # maximum deviation allowed for patch with respect to rigid shifts
+            'only_init': False,               # whether to run only the initialization
             
             #online
             'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
             'update_freq': 1000,                 # update every shape at least once every update_freq steps
-            'n_refit': 1,
-            'epochs': 1,                        # number of times to go over data, to refine shapes and temporal traces
+            #'n_refit': 1,
             #'simultaneously': True,             # demix and deconvolve simultaneously
-            'use_dense': True,
+            'use_dense': False,
             
             #make things more memory efficient
             'memory_efficient': False,
@@ -136,7 +128,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'rval_lowest': 0,
             'sniper_mode': True,                # flag for using CNN
             'use_cnn': True,
-            'thresh_CNN_noisy': 0.5,           # CNN threshold for candidate components
+            'thresh_CNN_noisy': 0.4,           # CNN threshold for candidate components
             'min_cnn_thr': 0.8,                # threshold for CNN based classifier
             'cnn_lowest': 0.3,                  # neurons with cnn probability lower than this value are rejected
             
@@ -148,9 +140,24 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     
-    if ~fname.endswith('.h5'):
+    if fname.endswith('.h5'):
+      c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+      #fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
+      cm.stop_server(dview=dview)      ## restart server to clean up memory
+    else:
+      # first we create a motion correction object with the specified parameters
+      #mc = MotionCorrect(fname, dview=dview, **opts.get_group('motion'))
+      
+      #%% Run (piecewise-rigid motion) correction using NoRMCorre
+      #mc.motion_correct(save_movie=True)
+      #file_link = mc.mmap_file
+      #fname_memmap = cm.save_memmap(mc.mmap_file, base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
+      #os.remove(mc.mmap_file[0])
       opts.change_params({'motion_correct':True})
-      opts.change_params({'pw_rigid':True})
+      print('perform motion correct here')
+    
+    fname_memmap = sv_dir + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"
+    opts.change_params({'fnames': [fname_memmap]})
     
     Cn = cm.load(fname_memmap, subindices=slice(0,None,5)).local_correlations(swap_dim=False)
     
@@ -159,12 +166,15 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
     
 ### ------------------ 1st run ------------------ ###
-    # %% fit with online object
+### %% fit with online object on memmapped data
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     cnm.fit_online()
     
+    print('Number of components found:' + str(cnm.estimates.A.shape[-1]))
+    
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
-    cnm.estimates.evaluate_components(Y,opts)
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    cnm.estimates.evaluate_components(Y,opts,dview)
     cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components)   ## plot contours, need that one to get the coordinates
     idx_border = [] 
     for n in cnm.estimates.idx_components:
@@ -175,53 +185,58 @@ def run_CaImAn_session(pathSession,onAcid=False):
     idx_border = None
     cnm.estimates.select_components(use_object=True)                        #%% update object with selected components
     
+    ### %% save file to allow loading as CNMF- (instead of OnACID-) file
+    cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
+    cnm.save(svname_h5)
+    
+### -------------------2nd run --------------------- ###
+### %% run a refit on the whole data
 
-### ------------------ 2nd run ------------------ ###
-    ## run over data again, with found ROIs, deconvolving
-    opts_dict ={
-          'p': 1,                             # order of AR indicator dynamics
-          'init_method': 'seeded',              # initialization method
-          'init_batch': 100,                  # number of frames for initialization
-          'simultaneously': True,             # demix and deconvolve simultaneously
-          'update_freq': 4000,                 # update every shape at least once every update_freq steps
-          'thresh_CNN_noisy': 0.8,           # CNN threshold for candidate components
-    }
-    opts.change_params(params_dict=opts_dict)
-    cnm = cnm.fit_online()
+    cnm = cnmf.cnmf.load_CNMF(svname_h5,n_processes,dview)
+    opts.change_params({'p':2})
+    opts.change_params({'update_freq':5000})
+    opts.change_params({'simultaneously':True})
+    cnm.refit(Y,dview)
+    cnm.devonvolve()
     
-    ### %% evaluate components (CNN, SNR, correlation, border-proximity)
-    cnm.estimates.evaluate_components(Y,opts)
-    cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components)   ## plot contours, need that one to get the coordinates
-    idx_border = [] 
-    for n in cnm.estimates.idx_components:
-      if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0]-border_thr)).any():
-        idx_border.append(n)
-    cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
-    cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
-    idx_border = None
-    cnm.estimates.select_components(use_object=True)                        #%% update object with selected components
+    ### %% save only items that are needed to save disk-space
+    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','F_dff','b','f','YrA','SNR_comp','r_values','cnn_preds','neurons_sn','AtA'])
+    cnm.save(svname_h5)
     
-    #cnm.estimates.detrend_df_f(quantileMin=8, frames_window=250)            #%% Extract DF/F values
     print('Number of components:' + str(cnm.estimates.A.shape[-1]))
     
-    #%% store results in matlab array for further processing
-    idx_keep = cnm.estimates.idx_components
+    ###%% store results in matlab array for further processing
     results = dict(A=cnm.estimates.A.todense(),
                    C=cnm.estimates.C,
                    S=cnm.estimates.S,
                    Cn=Cn,
-                   YrA=cnm.estimates.YrA,
                    b=cnm.estimates.b,
                    f=cnm.estimates.f)
-    hdf5storage.write(results, '.', svname[0], matlab_compatible=True)
-    
-    #cnm.estimates.view_components(img=Cn, idx=cnm.estimates.idx_components)
+    hdf5storage.write(results, '.', svname, matlab_compatible=True)
     
     print("Total time taken: " +  str(time.time()-t_start))
     
     os.remove(fname_memmap)
-    #return cnm, Cn, opts
+    return cnm, Cn, opts
     
+
+
+def clear_cnm(dic,retain=None,remove=None):
+  
+  if retain is None and remove is None:
+      print('please provide a list of keys to obtain in the structure')
+  elif remove is None:
+      keys = list(dic.__dict__.keys())
+      for key in keys:
+          if key not in retain:
+              dic.__dict__.pop(key)
+  elif retain is None:
+      keys = list(dic.__dict__.keys())
+      for key in keys:
+          if key in remove:
+              dic.__dict__.pop(key)
+  return dic
+
 # %%
 # This is to mask the differences between running this demo in Spyder
 # versus from the CLI
