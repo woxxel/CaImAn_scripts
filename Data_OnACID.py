@@ -60,8 +60,8 @@ def run_CaImAn_session(pathSession,onAcid=False):
     ### %% set paths
     #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
     #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01"
-    #sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
-    sv_dir = "/home/aschmidt/Documents/Data/tmp/"
+    sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
+    #sv_dir = "/home/aschmidt/Documents/Data/tmp/"
     fname = None
     for f in os.listdir(pathSession):
       if f.startswith("thy"):
@@ -74,6 +74,10 @@ def run_CaImAn_session(pathSession,onAcid=False):
       return
     
     svname = pathSession + "results_OnACID.mat"
+    if os.path.exists(svname):
+      print("Processed file already present - skipping")
+      return
+      
     svname_h5 = pathSession + "results_OnACID.hdf5"
     
     t_start = time.time()
@@ -90,10 +94,11 @@ def run_CaImAn_session(pathSession,onAcid=False):
             
             #model/analysis
             'rf': 64//2,                           # size of patch
-            'K': 200,                           # max number of components in each patch
+            'K': 200,                           # max number of components
             'nb': 2,                            # number of background components per patch
-            'p': 0,                             # order of AR indicator dynamics
+            'p': 1,                             # order of AR indicator dynamics
             'stride': 8,
+            'simultaneously': True,
             
             # init
             'ssub': 2,                          # spatial subsampling during initialization
@@ -106,13 +111,14 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'max_shifts': 12,          # maximum allowed rigid shift in pixels
             'overlaps': 24,               # overlap between patches (size of patch in pixels: strides+overlaps)
             'max_deviation_rigid': 12,           # maximum deviation allowed for patch with respect to rigid shifts
-            'only_init': False,               # whether to run only the initialization
+            #'only_init': False,               # whether to run only the initialization
             
             #online
             'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 2000,                 # update every shape at least once every update_freq steps
+            'update_freq': 1000,                 # update every shape at least once every update_freq steps
             'use_dense': False,
+            'n_refit': 1,
             
             #make things more memory efficient
             'memory_efficient': False,
@@ -128,12 +134,12 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'sniper_mode': True,                # flag for using CNN
             'use_cnn': True,
 
-            'thresh_CNN_noisy': 0.4,           # CNN threshold for candidate components
-            'min_cnn_thr': 0.8,                # threshold for CNN based classifier
+            'thresh_CNN_noisy': 0.4,            # CNN threshold for candidate components
+            'min_cnn_thr': 0.8,                 # threshold for CNN based classifier
             'cnn_lowest': 0.3,                  # neurons with cnn probability lower than this value are rejected
             
             #display
-            'show_movie': True,
+            'show_movie': False,
             'save_online_movie': False,
             'movie_name_online': "test_mp4v.avi"
     }
@@ -181,25 +187,25 @@ def run_CaImAn_session(pathSession,onAcid=False):
             idx_border.append(n)
     cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
     cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
-    idx_border = None
+    
     cnm.estimates.select_components(use_object=True)                        #%% update object with selected components
     
     ### %% save file to allow loading as CNMF- (instead of OnACID-) file
-    cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
+    #cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
+    ### %% save only items that are needed to save disk-space
+    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','F_dff','b','f','YrA','SNR_comp','r_values','cnn_preds','neurons_sn','AtA'])
     cnm.save(svname_h5)
     
 ### -------------------2nd run --------------------- ###
 ### %% run a refit on the whole data
-    print("Starting 2nd run @t = " +  str(time.time()-t_start))
+    print("Do deconvolution, @t = " +  str(time.time()-t_start))
     cnm = cnmf.cnmf.load_CNMF(svname_h5,n_processes,dview)
-    cnm.params.change_params({'p':2,'simultaneously':True,'update_freq':5000})
+    #cnm.params.change_params({'p':2,'simultaneously':True,'update_freq':5000})
     
-    cnm = cnm.refit(Y,dview).deconvolve()
+    #cnm = cnm.refit(Y,dview).deconvolve()
+    cnm.deconvolve()
     cm.stop_server(dview=dview)
     print("Done @t = " +  str(time.time()-t_start))
-    ### %% save only items that are needed to save disk-space
-    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','F_dff','b','f','YrA','SNR_comp','r_values','cnn_preds','neurons_sn','AtA'])
-    cnm.save(svname_h5)
     
     print('Number of components:' + str(cnm.estimates.A.shape[-1]))
     
@@ -211,6 +217,8 @@ def run_CaImAn_session(pathSession,onAcid=False):
                    b=cnm.estimates.b,
                    f=cnm.estimates.f)
     hdf5storage.write(results, '.', svname, matlab_compatible=True)
+    
+    cnm.save(svname_h5)
     
     print("Total time taken: " +  str(time.time()-t_start))
     
