@@ -212,7 +212,6 @@ def run_CaImAn_session(pathSession,onAcid=False):
     cnm.params.change_params({'p':1})
     cnm.estimates.dims = Cn.shape # gets lost for some reason
     
-    
     print("merge & update spatial + temporal & deconvolve @t = " +  str(time.time()-t_start))
     cnm.update_temporal(Yr)   # need this to calculate noise per component for merging purposes
     cnm.merge_comps(Yr,mx=1000,fast_merge=False)
