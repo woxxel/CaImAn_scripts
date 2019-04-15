@@ -77,7 +77,9 @@ def run_CaImAn_session(pathSession,onAcid=False):
     if os.path.exists(svname):
       print("Processed file already present - skipping")
       return
-      
+    
+    plt.close('all')
+    
     svname_h5 = pathSession + "results_OnACID.hdf5"
     
     t_start = time.time()
@@ -96,7 +98,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'rf': 64//2,                           # size of patch
             'K': 200,                           # max number of components
             'nb': 2,                            # number of background components per patch
-            'p': 1,                             # order of AR indicator dynamics
+            'p': 0,                             # order of AR indicator dynamics
             'stride': 8,
             'simultaneously': True,
             
@@ -116,9 +118,9 @@ def run_CaImAn_session(pathSession,onAcid=False):
             #online
             'init_batch': 300,                  # number of frames for initialization
             'init_method': 'bare',              # initialization method
-            'update_freq': 1000,                 # update every shape at least once every update_freq steps
+            'update_freq': 2000,                 # update every shape at least once every update_freq steps
             'use_dense': False,
-            'n_refit': 1,
+            'dist_shape_update': True,
             
             #make things more memory efficient
             'memory_efficient': False,
@@ -131,10 +133,11 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'min_SNR': 2.5,                     # minimum SNR for accepting candidate components
             'rval_thr': 0.85,                   # space correlation threshold for accepting a component
             'rval_lowest': 0,
-            'sniper_mode': True,                # flag for using CNN
+            'sniper_mode': True,                # flag for using CNN for detecting new components
+            #'test_both': True,                  # use CNN and correlation to test for new components
             'use_cnn': True,
 
-            'thresh_CNN_noisy': 0.4,            # CNN threshold for candidate components
+            'thresh_CNN_noisy': 0.6,            # CNN threshold for candidate components
             'min_cnn_thr': 0.8,                 # threshold for CNN based classifier
             'cnn_lowest': 0.3,                  # neurons with cnn probability lower than this value are rejected
             
@@ -190,24 +193,36 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
     cnm.estimates.select_components(use_object=True)                        #%% update object with selected components
     
+    print('Number of components left after evaluation:' + str(cnm.estimates.A.shape[-1]))
+    
     ### %% save file to allow loading as CNMF- (instead of OnACID-) file
     #cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
-    ### %% save only items that are needed to save disk-space
-    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','F_dff','b','f','YrA','SNR_comp','r_values','cnn_preds','neurons_sn','AtA'])
     cnm.save(svname_h5)
     
 ### -------------------2nd run --------------------- ###
 ### %% run a refit on the whole data
-    print("Do deconvolution, @t = " +  str(time.time()-t_start))
     cnm = cnmf.cnmf.load_CNMF(svname_h5,n_processes,dview)
-    #cnm.params.change_params({'p':2,'simultaneously':True,'update_freq':5000})
+    cnm.params.change_params({'p':1})
+    cnm.estimates.dims = Cn.shape # gets lost for some reason
     
-    #cnm = cnm.refit(Y,dview).deconvolve()
+    
+    print("merge & update spatial + temporal & deconvolve @t = " +  str(time.time()-t_start))
+    cnm.update_temporal(Yr)   # need this to calculate noise per component for merging purposes
+    cnm.merge_comps(Yr,mx=1000,fast_merge=False)
+    cnm.estimates.C[np.where(np.isnan(cnm.estimates.C))] = 0    ## for some reason, there are NaNs in it -> cant process this
+    cnm.update_temporal(Yr)   # update temporal trace after merging
+    
+    cnm.params.change_params({'n_pixels_per_process':1000})     ## for some reason this one gets lost
+    cnm.estimates.sn, _ = cnmf.pre_processing.get_noise_fft(Yr[:,:2000].astype(np.float32))
+    cnm.update_spatial(Yr)    # update shapes a last time
+    cnm.update_temporal(Yr)   # update temporal trace a last time
     cnm.deconvolve()
-    cm.stop_server(dview=dview)
-    print("Done @t = " +  str(time.time()-t_start))
     
-    print('Number of components:' + str(cnm.estimates.A.shape[-1]))
+    cm.stop_server(dview=dview)
+    
+    print("Done @t = " +  str(time.time()-t_start))
+    print('Number of components left after merging:' + str(cnm.estimates.A.shape[-1]))
+    
     
     ###%% store results in matlab array for further processing
     results = dict(A=cnm.estimates.A.todense(),
@@ -218,6 +233,12 @@ def run_CaImAn_session(pathSession,onAcid=False):
                    f=cnm.estimates.f)
     hdf5storage.write(results, '.', svname, matlab_compatible=True)
     
+    cnm.estimates.coordinates = None
+    cnm.estimates.plot_contours(img=Cn)
+    cnm.estimates.view_components(img=Cn)
+    
+    ### %% save only items that are needed to save disk-space
+    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA'])
     cnm.save(svname_h5)
     
     print("Total time taken: " +  str(time.time()-t_start))
