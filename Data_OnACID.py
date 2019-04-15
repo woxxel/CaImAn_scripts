@@ -164,7 +164,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
       #mc.motion_correct(save_movie=True)
       #fname_memmap = cm.save_memmap(mc.mmap_file, base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
       #os.remove(mc.mmap_file[0])
-      opts.change_params({'motion_correct':True})
+      opts.change_params({'motion_correct':True,'pw_rigid':True})
     
     print("Done @t = " +  str(time.time()-t_start))
     #fname_memmap = sv_dir + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"

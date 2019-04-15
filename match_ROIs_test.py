@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 logging.basicConfig(format=
                     "%(relativeCreated)12d [%(filename)s:%(funcName)20s():%(lineno)s]"\
                     "[%(process)d] %(message)s",
-                    level=logging.debug)
+                    level=logging.DEBUG)
 
 def match_ROIs_test(path,A_key,Cn_key,sessions=None):
   
@@ -22,7 +22,7 @@ def match_ROIs_test(path,A_key,Cn_key,sessions=None):
     assert isinstance(sessions,tuple), 'Please provide the numbers of sessions as a tuple of start and end session to be matched'
     pathResults = 'results_OnACID.mat'
     path = [('%sSession%02d/%s' % (path,i,pathResults)) for i in range(sessions[0],sessions[1]+1)]
-  
+  print(path)
   nS = len(path)
   print(nS)
   
@@ -37,7 +37,7 @@ def match_ROIs_test(path,A_key,Cn_key,sessions=None):
   Cn = [[]]*nS
   for s in range(nS):
     
-    f = h5py.File(path[s][0],'r')
+    f = h5py.File(path[s],'r')
     if len(f[A_key[s]])==3:
       A[s] = np.array(sparse.csc_matrix((f[A_key[s]]['data'], f[A_key[s]]['ir'], f[A_key[s]]['jc'])).todense()).copy()
     else:
@@ -45,7 +45,7 @@ def match_ROIs_test(path,A_key,Cn_key,sessions=None):
     
     if len(path[s])>1:
       f.close()
-      f = h5py.File(path[s][1],'r')
+      f = h5py.File(path[s],'r')
     Cn[s] = f[Cn_key[s]].value
     f.close()
   
@@ -73,7 +73,7 @@ def match_ROIs_test(path,A_key,Cn_key,sessions=None):
     print("Time taken: %s" % str(time.time()-t_start))
     return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2
   else:
-    [A_union, assignments, matchings] = register_multisession(A, Cn[0].shape, templates=Cn)
+    [A_union, assignments, matchings] = cm.base.rois.register_multisession(A, Cn[0].shape, templates=Cn)
     print("Time taken: %s" % str(time.time()-t_start))
     return A_union, assignments, matchings
   
