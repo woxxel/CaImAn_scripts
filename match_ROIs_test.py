@@ -15,11 +15,16 @@ logging.basicConfig(format=
                     "[%(process)d] %(message)s",
                     level=logging.debug)
 
-def match_ROIs_test(path,A_key,Cn_key):
+def match_ROIs_test(path,A_key,Cn_key,sessions=None):
   
-  if not isinstance(path,list):
-    raise("Please provide the path as a list")
+  
+  if isinstance(path,str):
+    assert isinstance(sessions,tuple), 'Please provide the numbers of sessions as a tuple of start and end session to be matched'
+    pathResults = 'results_OnACID.mat'
+    path = [('%sSession%02d/%s' % (path,i,pathResults)) for i in range(sessions[0],sessions[1]+1)]
+  
   nS = len(path)
+  print(nS)
   
   t_start = time.time()
   
@@ -62,8 +67,15 @@ def match_ROIs_test(path,A_key,Cn_key):
   
   
   print("Start matching")
-  #[matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, plot_results=True)
-  [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, template1=Cn[0], template2=Cn[1], plot_results=True)
-  print("Time taken: %s" % str(time.time()-t_start))
+  if nS == 2:
+    #[matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, plot_results=True)
+    [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, template1=Cn[0], template2=Cn[1], plot_results=True)
+    print("Time taken: %s" % str(time.time()-t_start))
+    return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2
+  else:
+    [A_union, assignments, matchings] = register_multisession(A, Cn[0].shape, templates=Cn)
+    print("Time taken: %s" % str(time.time()-t_start))
+    return A_union, assignments, matchings
   
-  return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2
+  
+  

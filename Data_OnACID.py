@@ -45,6 +45,8 @@ logging.basicConfig(format=
 # %%
 def run_CaImAn_mouse(pathMouse,onAcid=False):
   
+  plt.ion()
+  
   for f in os.listdir(pathMouse):
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
@@ -78,7 +80,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
       print("Processed file already present - skipping")
       return
     
-    plt.close('all')
+    #plt.close('all')
     
     svname_h5 = pathSession + "results_OnACID.hdf5"
     
@@ -175,15 +177,16 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
 ### ------------------ 1st run ------------------ ###
 ### %% fit with online object on memmapped data
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     cnm.fit_online()
-    
+    cm.stop_server(dview=dview)      ## restart server to clean up memory
     print('Number of components found:' + str(cnm.estimates.A.shape[-1]))
     
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm.estimates.evaluate_components(Y,opts,dview)
-    cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components)   ## plot contours, need that one to get the coordinates
+    cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components, crd=None)   ## plot contours, need that one to get the coordinates
     idx_border = [] 
     for n in cnm.estimates.idx_components:
         if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0]-border_thr)).any():
@@ -191,16 +194,20 @@ def run_CaImAn_session(pathSession,onAcid=False):
     cnm.estimates.idx_components = np.setdiff1d(cnm.estimates.idx_components,idx_border)
     cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
     
-    cnm.estimates.select_components(use_object=True)                        #%% update object with selected components
+    cnm.estimates.select_components(use_object=True, save_discarded_components=False)                        #%% update object with selected components
     
     print('Number of components left after evaluation:' + str(cnm.estimates.A.shape[-1]))
     
     ### %% save file to allow loading as CNMF- (instead of OnACID-) file
     #cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
+    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA','dims','coordinates','sn'])
     cnm.save(svname_h5)
+    cm.stop_server(dview=dview)      ## restart server to clean up memory
     
 ### -------------------2nd run --------------------- ###
 ### %% run a refit on the whole data
+    
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm = cnmf.cnmf.load_CNMF(svname_h5,n_processes,dview)
     cnm.params.change_params({'p':1})
     cnm.estimates.dims = Cn.shape # gets lost for some reason
@@ -234,7 +241,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
     hdf5storage.write(results, '.', svname, matlab_compatible=True)
     
     cnm.estimates.coordinates = None
-    cnm.estimates.plot_contours(img=Cn)
+    cnm.estimates.plot_contours(img=Cn, crd=None)
     cnm.estimates.view_components(img=Cn)
     
     ### %% save only items that are needed to save disk-space
