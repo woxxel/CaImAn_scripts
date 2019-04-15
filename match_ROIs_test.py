@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 logging.basicConfig(format=
                     "%(relativeCreated)12d [%(filename)s:%(funcName)20s():%(lineno)s]"\
                     "[%(process)d] %(message)s",
-                    level=logging.DEBUG)
+                    level=logging.ERROR)
 
 def match_ROIs_test(path,A_key,Cn_key,sessions=None):
   
@@ -22,9 +22,8 @@ def match_ROIs_test(path,A_key,Cn_key,sessions=None):
     assert isinstance(sessions,tuple), 'Please provide the numbers of sessions as a tuple of start and end session to be matched'
     pathResults = 'results_OnACID.mat'
     path = [('%sSession%02d/%s' % (path,i,pathResults)) for i in range(sessions[0],sessions[1]+1)]
-  print(path)
+  
   nS = len(path)
-  print(nS)
   
   t_start = time.time()
   
