@@ -46,8 +46,8 @@ logging.basicConfig(format=
 def run_CaImAn_mouse(pathMouse,onAcid=False):
   
   plt.ion()
-  
-  for f in os.listdir(pathMouse):
+  l_Ses = os.listdir(pathMouse)
+  for f in l_Ses.sort():
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
       print("\t Session: "+pathSession)
