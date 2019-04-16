@@ -80,8 +80,6 @@ def run_CaImAn_session(pathSession,onAcid=False):
       print("Processed file already present - skipping")
       return
     
-    #plt.close('all')
-    
     svname_h5 = pathSession + "results_OnACID.hdf5"
     
     t_start = time.time()
@@ -177,16 +175,17 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
 ### ------------------ 1st run ------------------ ###
 ### %% fit with online object on memmapped data
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm = cnmf.online_cnmf.OnACID(params=opts)
     cnm.fit_online()
-    cm.stop_server(dview=dview)      ## restart server to clean up memory
     print('Number of components found:' + str(cnm.estimates.A.shape[-1]))
+    
+    plt.close('all')
     
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm.estimates.evaluate_components(Y,opts,dview)
     cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components, crd=None)   ## plot contours, need that one to get the coordinates
+    plt.pause(0.5)
     idx_border = [] 
     for n in cnm.estimates.idx_components:
         if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0]-border_thr)).any():
@@ -195,6 +194,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
     cnm.estimates.idx_components_bad = np.union1d(cnm.estimates.idx_components_bad,idx_border)
     
     cnm.estimates.select_components(use_object=True, save_discarded_components=False)                        #%% update object with selected components
+    
     
     print('Number of components left after evaluation:' + str(cnm.estimates.A.shape[-1]))
     
@@ -242,7 +242,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
     cnm.estimates.coordinates = None
     cnm.estimates.plot_contours(img=Cn, crd=None)
     cnm.estimates.view_components(img=Cn)
-    
+    plt.pause(0.5)
     ### %% save only items that are needed to save disk-space
     cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA'])
     cnm.save(svname_h5)
