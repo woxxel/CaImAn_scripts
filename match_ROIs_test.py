@@ -1,80 +1,129 @@
-
-
 import numpy as np
-#import os
 import logging
-import h5py
 import time
+import imp
+
 from scipy import sparse
+import matplotlib.pyplot as plt
+from scipy.io import loadmat
+from scipy.io import savemat
+
+import h5py
+import hdf5storage
+
 import caiman as cm
 from caiman.base.rois import register_ROIs
-import matplotlib.pyplot as plt
+
+#imp.load_source("register_ROIs","../CaImAn/caiman/base/rois.py")
 
 logging.basicConfig(format=
                     "%(relativeCreated)12d [%(filename)s:%(funcName)20s():%(lineno)s]"\
                     "[%(process)d] %(message)s",
                     level=logging.ERROR)
 
-def match_ROIs_test(path,A_key,Cn_key,sessions=None):
+
+def compare_old_vs_new(pathMouse,sessions=None,pl=False):
+
+#def compare_old_vs_new(A_old,A_new,sessions=None,plt=False):
+  
+  pathResults_old = 'resultsCNMF_MF1_LK1.mat'
+  pathResults_new = 'results_OnACID.mat'
+  pathSave = 'matching_old_new.mat'
+  
+  nS = sessions[1]-sessions[0]+1
+  
+  t_start = time.time()
+  for s in range(sessions[0],sessions[1]+1):
+    
+    t_start_s = time.time()
+    print('---------- Now matching session %d ----------'%s)
+    dims = (512,512)
+    
+    path_old = '%sSession%02d/%s' % (pathMouse,s,pathResults_old)
+    path_new = '%sSession%02d/%s' % (pathMouse,s,pathResults_new)
+    svname = '%sSession%02d/%s' % (pathMouse,s,pathSave)
+    
+    #print(path_old)
+    #print(path_new)
+    
+    f = h5py.File(path_old,'r')
+    A_old = sparse.csc_matrix((f['A2']['data'], f['A2']['ir'], f['A2']['jc']))
+    f.close()
+    
+    f = loadmat(path_new)
+    A_new = f['A'].reshape(-1,dims[0],dims[1]).transpose(2,1,0).reshape(dims[0]*dims[1],-1)
+    f.close()
+    
+    N = A_old.shape[1]
+    A_old.resize(dims[0]*dims[1],N)
+    print(A_old.shape)
+    print(A_new.shape)
+    
+    #return A_old, A_new
+    [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, _] = cm.base.rois.register_ROIs(A_old, A_new, dims, thresh_cost=.5, plot_results=pl)
+    
+    #print(performance)
+    
+    results = dict(matched_ROIs1=matched_ROIs1,
+                   matched_ROIs2=matched_ROIs2,
+                   non_matched1=non_matched1,
+                   non_matched2=non_matched2,
+                   performance=performance)
+    hdf5storage.write(results, '.', svname, matlab_compatible=True)
+    
+    print('---------- finished matching session %d.\t time taken: %s ----------'%(s,str(time.time()-t_start_s)))
+  
+  print('---------- all done. Overall time taken: %s ----------'%str(time.time()-t_start))
+  return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance
   
   
-  if isinstance(path,str):
+  
+
+def match_ROIs_test(pathMouse,sessions=None,pl=False):
+  
+  
+  if isinstance(pathMouse,str):
     assert isinstance(sessions,tuple), 'Please provide the numbers of sessions as a tuple of start and end session to be matched'
     pathResults = 'results_OnACID.mat'
-    path = [('%sSession%02d/%s' % (path,i,pathResults)) for i in range(sessions[0],sessions[1]+1)]
+    path = [('%sSession%02d/%s' % (pathMouse,i,pathResults)) for i in range(sessions[0],sessions[1]+1)]
+    pathSave = pathMouse + 'results_matching_old.mat'
   
   nS = len(path)
   
   t_start = time.time()
   
-  if not (len(A_key) == nS):
-    A_key = list(A_key) * nS
-  if not (len(Cn_key) == nS):
-    Cn_key = list(Cn_key) * nS
-  
   A = [[]]*nS
   Cn = [[]]*nS
   for s in range(nS):
+    print(path[s])
+    f = loadmat(path[s])
+    A[s] = f['A']
+    Cn[s] = f['Cn']
     
-    f = h5py.File(path[s],'r')
-    if len(f[A_key[s]])==3:
-      A[s] = np.array(sparse.csc_matrix((f[A_key[s]]['data'], f[A_key[s]]['ir'], f[A_key[s]]['jc'])).todense()).copy()
-    else:
-      A[s] = f[A_key[s]].value.transpose().copy()
+    print('# ROIs: '+str(A[s].shape[1]))
     
-    if len(path[s])>1:
-      f.close()
-      f = h5py.File(path[s],'r')
-    Cn[s] = f[Cn_key[s]].value
-    f.close()
-  
-  ### make sure, arrays have the same number of pixels
-  max_dim = max(A[0].shape[0],A[1].shape[0])
-  for s in range(nS):
-    old_dim = A[s].shape[0]
-    N = A[s].shape[1]
-    A[s].resize(max_dim,N)
-    
-    if old_dim!=max_dim:
-      A[s] = A[s].reshape(512,512,N).transpose(1,0,2).reshape(max_dim,N)
-    else:
-      Cn[s] = Cn[s].transpose(1,0)
-    
-    #plt.figure()
-    #plt.imshow(Cn[s])
-    #plt.show()
-  
-  
+  thr_cost = 0.3
   print("Start matching")
+  print(nS)
   if nS == 2:
-    #[matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, plot_results=True)
-    [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, template1=Cn[0], template2=Cn[1], plot_results=True)
+    [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, _, scores, shifts_matched] = cm.base.rois.register_ROIs(A[0], A[1], Cn[0].shape, template1=Cn[0], template2=Cn[1], thresh_cost=thr_cost, plot_results=pl)
+    print(performance)
     print("Time taken: %s" % str(time.time()-t_start))
-    return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, A2
+    return matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, scores, shifts_matched
   else:
-    [A_union, assignments, matchings] = cm.base.rois.register_multisession(A, Cn[0].shape, templates=Cn)
+    [A_union, assignments, matchings, shifts] = cm.base.rois.register_multisession(A, Cn[0].shape, templates=Cn, thresh_cost=thr_cost, plot_results=pl)
     print("Time taken: %s" % str(time.time()-t_start))
-    return A_union, assignments, matchings
+    
+    results = dict(A_union=A_union,
+                   assignments=assignments,
+                   matchings=matchings,
+                   shifts=shifts)
+    savemat(pathSave, results)
+    
+    return A_union, assignments, matchings, shifts
+  
+  
+  
   
   
   

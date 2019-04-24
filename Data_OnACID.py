@@ -16,6 +16,7 @@ import scipy as sp
 import os
 import hdf5storage
 import time
+from scipy.io import savemat
 
 import matplotlib.pyplot as plt
 
@@ -43,18 +44,19 @@ logging.basicConfig(format=
                     level=logging.ERROR)
     # filename="/tmp/caiman.log"
 # %%
-def run_CaImAn_mouse(pathMouse,onAcid=False):
+def run_CaImAn_mouse(pathMouse,suffix=""):
   
   plt.ion()
   l_Ses = os.listdir(pathMouse)
-  for f in l_Ses.sort():
+  l_Ses.sort()
+  for f in l_Ses:
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
       print("\t Session: "+pathSession)
-      run_CaImAn_session(pathSession,onAcid=onAcid)
+      run_CaImAn_session(pathSession,suffix=suffix)
       #return cnm, Cn, opts
   
-def run_CaImAn_session(pathSession,onAcid=False):
+def run_CaImAn_session(pathSession,suffix=""):
     
     pass  # For compatibility between running under Spyder and the CLI
 
@@ -100,7 +102,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'nb': 2,                            # number of background components per patch
             'p': 0,                             # order of AR indicator dynamics
             'stride': 8,
-            'simultaneously': True,
+            #'simultaneously': True,
             
             # init
             'ssub': 2,                          # spatial subsampling during initialization
@@ -120,7 +122,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
             'init_method': 'bare',              # initialization method
             'update_freq': 2000,                 # update every shape at least once every update_freq steps
             'use_dense': False,
-            'dist_shape_update': True,
+            #'dist_shape_update': True,
             
             #make things more memory efficient
             'memory_efficient': False,
@@ -149,10 +151,11 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     
-    print("Start writing memmapped file @t = " +  str(time.time()-t_start))
+    print("Start writing memmapped file @t = " +  time.ctime())
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
-    fname_memmap = cm.save_memmap([fname], base_name='memmap_', save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
+    fname_memmap = cm.save_memmap([fname], base_name='memmap%s_'%suffix, save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
     cm.stop_server(dview=dview)      ## restart server to clean up memory
+    print(fname_memmap)
     if not fname.endswith('.h5'):
       print('perform motion correction')
       # first we create a motion correction object with the specified parameters
@@ -164,7 +167,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
       #os.remove(mc.mmap_file[0])
       opts.change_params({'motion_correct':True,'pw_rigid':True})
     
-    print("Done @t = " +  str(time.time()-t_start))
+    print("Done @t = %s, (time passed: %s)" % (time.ctime(),str(time.time()-t_start)))
     #fname_memmap = sv_dir + "memmap__d1_512_d2_512_d3_1_order_C_frames_8989_.mmap"
     opts.change_params({'fnames': [fname_memmap]})
     
@@ -184,8 +187,10 @@ def run_CaImAn_session(pathSession,onAcid=False):
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm.estimates.evaluate_components(Y,opts,dview)
+    #plt.close('all')
     cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components, crd=None)   ## plot contours, need that one to get the coordinates
-    plt.pause(0.5)
+    plt.draw()
+    plt.pause(1)
     idx_border = [] 
     for n in cnm.estimates.idx_components:
         if (cnm.estimates.coordinates[n]['CoM'] < border_thr).any() or (cnm.estimates.coordinates[n]['CoM'] > (cnm.estimates.dims[0]-border_thr)).any():
@@ -212,7 +217,7 @@ def run_CaImAn_session(pathSession,onAcid=False):
     cnm.params.change_params({'p':1})
     cnm.estimates.dims = Cn.shape # gets lost for some reason
     
-    print("merge & update spatial + temporal & deconvolve @t = " +  str(time.time()-t_start))
+    print("merge & update spatial + temporal & deconvolve @t = %s, (time passed: %s)" % (time.ctime(),str(time.time()-t_start)))
     cnm.update_temporal(Yr)   # need this to calculate noise per component for merging purposes
     cnm.merge_comps(Yr,mx=1000,fast_merge=False)
     cnm.estimates.C[np.where(np.isnan(cnm.estimates.C))] = 0    ## for some reason, there are NaNs in it -> cant process this
@@ -226,23 +231,25 @@ def run_CaImAn_session(pathSession,onAcid=False):
     
     cm.stop_server(dview=dview)
     
-    print("Done @t = " +  str(time.time()-t_start))
+    print("Done @t = %s, (time passed: %s)" % (time.ctime(),str(time.time()-t_start)))
     print('Number of components left after merging:' + str(cnm.estimates.A.shape[-1]))
     
     
     ###%% store results in matlab array for further processing
-    results = dict(A=cnm.estimates.A.todense(),
+    results = dict(A=cnm.estimates.A,
                    C=cnm.estimates.C,
                    S=cnm.estimates.S,
                    Cn=Cn,
                    b=cnm.estimates.b,
                    f=cnm.estimates.f)
-    hdf5storage.write(results, '.', svname, matlab_compatible=True)
+    savemat(svname,results)
+    #hdf5storage.write(results, '.', svname, matlab_compatible=True)
     
     cnm.estimates.coordinates = None
     cnm.estimates.plot_contours(img=Cn, crd=None)
     cnm.estimates.view_components(img=Cn)
-    plt.pause(0.5)
+    plt.draw()
+    plt.pause(1)
     ### %% save only items that are needed to save disk-space
     cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA'])
     cnm.save(svname_h5)
