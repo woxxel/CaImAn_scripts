@@ -64,8 +64,8 @@ def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
     ### %% set paths
     #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
     #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01"
-    #sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
-    sv_dir = "/home/aschmidt/Documents/Data/tmp/"
+    sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
+    #sv_dir = "/home/aschmidt/Documents/Data/tmp/"
     fname = None
     for f in os.listdir(pathSession):
       if f.startswith("thy") or f.startswith("shank"):
@@ -199,7 +199,7 @@ def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
         n_processes=1
     
     cnm.estimates.evaluate_components(Y,opts,dview)
-    cnm.estimates.view_components(img=Cn)
+    #cnm.estimates.view_components(img=Cn)
     #plt.close('all')
     cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components, crd=None)   ## plot contours, need that one to get the coordinates
     plt.draw()
