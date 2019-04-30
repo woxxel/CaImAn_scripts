@@ -144,7 +144,7 @@ def run_CaImAn_session(pathSession,suffix=""):
             'cnn_lowest': 0.3,                  # neurons with cnn probability lower than this value are rejected
             
             #display
-            'show_movie': False,
+            'show_movie': True,
             'save_online_movie': False,
             'movie_name_online': "test_mp4v.avi"
     }
@@ -187,6 +187,7 @@ def run_CaImAn_session(pathSession,suffix=""):
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     cnm.estimates.evaluate_components(Y,opts,dview)
+    cnm.estimates.view_components(img=Cn)
     #plt.close('all')
     cnm.estimates.plot_contours(img=Cn, idx=cnm.estimates.idx_components, crd=None)   ## plot contours, need that one to get the coordinates
     plt.draw()
@@ -234,8 +235,9 @@ def run_CaImAn_session(pathSession,suffix=""):
     print("Done @t = %s, (time passed: %s)" % (time.ctime(),str(time.time()-t_start)))
     print('Number of components left after merging:' + str(cnm.estimates.A.shape[-1]))
     
-    
-    ###%% store results in matlab array for further processing
+
+### ------------------- store results ------------------- ###
+###%% store results in matlab array for further processing
     results = dict(A=cnm.estimates.A,
                    C=cnm.estimates.C,
                    S=cnm.estimates.S,
@@ -245,14 +247,14 @@ def run_CaImAn_session(pathSession,suffix=""):
     savemat(svname,results)
     #hdf5storage.write(results, '.', svname, matlab_compatible=True)
     
-    cnm.estimates.coordinates = None
-    cnm.estimates.plot_contours(img=Cn, crd=None)
-    cnm.estimates.view_components(img=Cn)
-    plt.draw()
-    plt.pause(1)
+    #cnm.estimates.coordinates = None
+    #cnm.estimates.plot_contours(img=Cn, crd=None)
+    #cnm.estimates.view_components(img=Cn)
+    #plt.draw()
+    #plt.pause(1)
     ### %% save only items that are needed to save disk-space
-    cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA'])
-    cnm.save(svname_h5)
+    #cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA'])
+    #cnm.save(svname_h5)
     
     print("Total time taken: " +  str(time.time()-t_start))
     
