@@ -44,7 +44,7 @@ logging.basicConfig(format=
                     level=logging.ERROR)
     # filename="/tmp/caiman.log"
 # %%
-def run_CaImAn_mouse(pathMouse,suffix=""):
+def run_CaImAn_mouse(pathMouse,suffix="",use_parallel=True):
   
   plt.ion()
   l_Ses = os.listdir(pathMouse)
@@ -53,10 +53,10 @@ def run_CaImAn_mouse(pathMouse,suffix=""):
     if f.startswith("Session"):
       pathSession = pathMouse + f + '/'
       print("\t Session: "+pathSession)
-      run_CaImAn_session(pathSession,suffix=suffix)
+      run_CaImAn_session(pathSession,suffix=suffix,use_parallel=use_parallel)
       #return cnm, Cn, opts
   
-def run_CaImAn_session(pathSession,suffix=""):
+def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
     
     pass  # For compatibility between running under Spyder and the CLI
 
@@ -64,11 +64,11 @@ def run_CaImAn_session(pathSession,suffix=""):
     ### %% set paths
     #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
     #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01"
-    sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
-    #sv_dir = "/home/aschmidt/Documents/Data/tmp/"
+    #sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
+    sv_dir = "/home/aschmidt/Documents/Data/tmp/"
     fname = None
     for f in os.listdir(pathSession):
-      if f.startswith("thy"):
+      if f.startswith("thy") or f.startswith("shank"):
         fname = pathSession + f
         if f.endswith('.h5'):
           break
@@ -78,9 +78,9 @@ def run_CaImAn_session(pathSession,suffix=""):
       return
     
     svname = pathSession + "results_OnACID.mat"
-    if os.path.exists(svname):
-      print("Processed file already present - skipping")
-      return
+    #if os.path.exists(svname):
+      #print("Processed file already present - skipping")
+      #return
     
     svname_h5 = pathSession + "results_OnACID.hdf5"
     
@@ -152,9 +152,16 @@ def run_CaImAn_session(pathSession,suffix=""):
     opts = cnmf.params.CNMFParams(params_dict=params_dict)
     
     print("Start writing memmapped file @t = " +  time.ctime())
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    if use_parallel:
+        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    else:
+        dview=None
+        n_processes=1
+    
     fname_memmap = cm.save_memmap([fname], base_name='memmap%s_'%suffix, save_dir=sv_dir, n_chunks=20, order='C', dview=dview)  # exclude borders
-    cm.stop_server(dview=dview)      ## restart server to clean up memory
+    if use_parallel:
+        cm.stop_server(dview=dview)      ## restart server to clean up memory
+    
     print(fname_memmap)
     if not fname.endswith('.h5'):
       print('perform motion correction')
@@ -185,7 +192,12 @@ def run_CaImAn_session(pathSession,suffix=""):
     plt.close('all')
     
     ### %% evaluate components (CNN, SNR, correlation, border-proximity)
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    if use_parallel:
+        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    else:
+        dview=None
+        n_processes=1
+    
     cnm.estimates.evaluate_components(Y,opts,dview)
     cnm.estimates.view_components(img=Cn)
     #plt.close('all')
@@ -208,12 +220,17 @@ def run_CaImAn_session(pathSession,suffix=""):
     #cnm.estimates = clear_cnm(cnm.estimates,remove=['shifts','discarded_components'])
     cnm.estimates = clear_cnm(cnm.estimates,retain=['A','C','S','b','f','YrA','dims','coordinates','sn'])
     cnm.save(svname_h5)
-    cm.stop_server(dview=dview)      ## restart server to clean up memory
     
 ### -------------------2nd run --------------------- ###
 ### %% run a refit on the whole data
     
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    if use_parallel:
+        cm.stop_server(dview=dview)      ## restart server to clean up memory
+        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    else:
+        dview=None
+        n_processes=1
+    
     cnm = cnmf.cnmf.load_CNMF(svname_h5,n_processes,dview)
     cnm.params.change_params({'p':1})
     cnm.estimates.dims = Cn.shape # gets lost for some reason
@@ -230,7 +247,8 @@ def run_CaImAn_session(pathSession,suffix=""):
     cnm.update_temporal(Yr)   # update temporal trace a last time
     cnm.deconvolve()
     
-    cm.stop_server(dview=dview)
+    if use_parallel:
+        cm.stop_server(dview=dview)
     
     print("Done @t = %s, (time passed: %s)" % (time.ctime(),str(time.time()-t_start)))
     print('Number of components left after merging:' + str(cnm.estimates.A.shape[-1]))
