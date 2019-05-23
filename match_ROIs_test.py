@@ -23,13 +23,21 @@ logging.basicConfig(format=
                     level=logging.ERROR)
 
 
-def compare_old_vs_new(pathMouse,sessions=None,std=(2,2),thr_cost=0.7,pl=False):
+def compare_old_vs_new(pathMouse,sessions=None,std=None,thr_cost=0.7,pl=False):
 
-  pathResults_old = 'resultsCNMF_MF1_LK1.mat'
+  #pathResults_old = 'resultsCNMF_MF1_LK1.mat'
   pathResults_new = 'results_OnACID.mat'
   pathSave = 'matching_old_new.mat'
   
   nS = sessions[1]-sessions[0]+1
+  
+  path_new = '%sSession01/%s' % (pathMouse,pathResults_new)
+  f = loadmat(path_new)
+  Cn0 = f['Cn']
+  
+  pathResults_old = 'backup/save_final/footprints.mat'
+  path_old = '%s%s' % (pathMouse,pathResults_old)
+  
   
   t_start = time.time()
   for s in range(sessions[0],sessions[1]+1):
@@ -39,29 +47,33 @@ def compare_old_vs_new(pathMouse,sessions=None,std=(2,2),thr_cost=0.7,pl=False):
     dims = (512,512)
     
     pathFigDir = '%sSession%02d/pics/' % (pathMouse,s)
-    path_old = '%sSession%02d/%s' % (pathMouse,s,pathResults_old)
+    #path_old = '%sSession%02d/%s' % (pathMouse,s,pathResults_old)
     path_new = '%sSession%02d/%s' % (pathMouse,s,pathResults_new)
     svname = '%sSession%02d/%s' % (pathMouse,s,pathSave)
     
-    #print(path_old)
-    #print(path_new)
+    print(path_old)
+    print(path_new)
+    
     
     f = h5py.File(path_old,'r')
-    A_old = sparse.csc_matrix((f['A2']['data'], f['A2']['ir'], f['A2']['jc']))
+    #A_old = sparse.csc_matrix((f['A2']['data'], f['A2']['ir'], f['A2']['jc']))
+    A_old = sparse.vstack([sparse.csc_matrix((f[A]['data'], f[A]['ir'], f[A]['jc']),shape=(512,512)).transpose().reshape(512*512) if 'data' in list(f[A].keys()) else sparse.csc_matrix((1,512*512)) for A in f[f['footprints/session/ROI'][s-1][0]]['A'][0]]).T.asformat('csc')
     f.close()
     
     f = loadmat(path_new)
     A_new = f['A']#.reshape(-1,dims[0],dims[1]).transpose(2,1,0).reshape(dims[0]*dims[1],-1)
+    Cn = f['Cn']
     
-    N = A_old.shape[1]
-    A_old.resize(dims[0]*dims[1],N)
+    #N = A_old.shape[1]
+    #A_old.resize(dims[0]*dims[1],N)
     print(A_old.shape[1])
     print(A_new.shape[1])
     
     #return A_old, A_new
     [matched_ROIs1, matched_ROIs2, non_matched1, non_matched2, performance, _, scores, shifts] = cm.base.rois.register_ROIs(A_old, A_new, dims,
+                                                                                                            template1=Cn0, template2=Cn,
                                                                                                             std=std, cr=(15,15),
-                                                                                                            thresh_cost=thr_cost, max_dist=8, plot_results=pl)
+                                                                                                            thresh_cost=thr_cost, max_dist=8, max_thr=0.01, plot_results=pl)
     print(performance)
     
     results = dict(matched_ROIs1=matched_ROIs1,
@@ -71,12 +83,15 @@ def compare_old_vs_new(pathMouse,sessions=None,std=(2,2),thr_cost=0.7,pl=False):
                    performance=performance,
                    scores=scores,
                    shifts=np.array(shifts))
+    if os.path.exists(svname):
+      os.remove(svname)
+    
     savemat(svname, results)
     
     if pl:
       if not os.path.exists(pathFigDir):
         os.mkdir(pathFigDir)
-      plt.savefig('%smatching_old_vs_new.png'%pathFigDir)
+      plt.savefig('%smatching_old_vs_new2.png'%pathFigDir)
       plt.close('all')
     
     print('---------- finished matching session %d.\t time taken: %s ----------'%(s,str(time.time()-t_start_s)))
@@ -89,11 +104,17 @@ def compare_old_vs_new(pathMouse,sessions=None,std=(2,2),thr_cost=0.7,pl=False):
 
 def match_ROIs_test(pathMouse,sessions=None,thr_cost=0.7,std=(2,2),w=1/3,OnACID=True,pl=False):
   
+  print('should remove deleted ones')
+  
   if OnACID:
     suffix = '_OnACID'
   else:
     suffix = ''
   
+  pathMatching = '%smatching' % pathMouse
+  if not os.path.exists(pathMatching):
+    os.mkdir(pathMatching)
+    
   if std is None:
     pathSave = '%smatching/results_matching_multi_std=0_thr=%d_w=%d%s.mat'%(pathMouse,thr_cost*100,int(w*100),suffix)
   else:
@@ -110,19 +131,43 @@ def match_ROIs_test(pathMouse,sessions=None,thr_cost=0.7,std=(2,2),w=1/3,OnACID=
     
   nS = len(path)
   
+  
   A = [[]]*nS
-  Cn = [[]]*nS
+  if not OnACID:
+    pathResults = 'results_OnACID.mat'
+    path = '%sSession01/%s' % (pathMouse,pathResults)
+    f = loadmat(path)
+    Cn = [f['Cn']]
+    
+    pathResults_old = 'backup/save_final/footprints.mat'
+    path = '%s%s' % (pathMouse,pathResults_old)
+    print("bla")
+    print(path)
+    f = h5py.File(path)
+    for s in range(nS):
+      A[s] = sparse.vstack([sparse.csc_matrix((f[A]['data'], f[A]['ir'], f[A]['jc']),shape=(512,512)).transpose().reshape(512*512) if 'data' in list(f[A].keys()) else sparse.csc_matrix((1,512*512)) for A in f[f['footprints/session/ROI'][s][0]]['A'][0]]).T.asformat('csc')
+    
+    f.close()
+  else:
+    Cn = [[]]*nS
+    
   for s in range(nS):
-    print(path[s])
+    #print(path[s])
     if OnACID:
+      if not os.path.exists(path[s]):
+        print("File %s does not exist. Skipping..."%path[s])
+        continue
+      
       f = loadmat(path[s])
       A[s] = f['A']
       Cn[s] = f['Cn']
-    else:
-      f = h5py.File(path[s],'r')
-      Cn[s] = f['Cn'].value.transpose()
-      A[s] = sparse.csc_matrix((f['A2']['data'], f['A2']['ir'], f['A2']['jc']),shape=(np.prod(Cn[s].shape),f['C2'].shape[-1]))
-      f.close()
+      
+    #else:
+      #f = h5py.File(path[s],'r')
+      #Cn[s] = f['Cn'].value.transpose()
+      
+      #A[s] = sparse.csc_matrix((f['A2']['data'], f['A2']['ir'], f['A2']['jc']),shape=(np.prod(Cn[s].shape),f['C2'].shape[-1]))
+      #f.close()
     
     A[s] = A[s].astype(np.float32)
     
@@ -167,6 +212,11 @@ def match_ROIs_test(pathMouse,sessions=None,thr_cost=0.7,std=(2,2),w=1/3,OnACID=
   
   
   
-  
-  
-  
+
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/34/",sessions=(1,22),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/35/",sessions=(1,22),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/65/",sessions=(1,44),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/66/",sessions=(1,45),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/72/",sessions=(1,44),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/243/",sessions=(1,71),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);
+#_ = match_ROIs_test("/media/wollex/Analyze_AS3/Data/244/",sessions=(1,44),std=None,thr_cost=0.7,w=1/3,OnACID=True,pl=False);

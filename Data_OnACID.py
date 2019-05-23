@@ -44,17 +44,22 @@ logging.basicConfig(format=
                     level=logging.ERROR)
     # filename="/tmp/caiman.log"
 # %%
-def run_CaImAn_mouse(pathMouse,suffix="",use_parallel=True):
+def run_CaImAn_mouse(pathMouse,sessions=None,suffix="",use_parallel=True):
   
   plt.ion()
-  l_Ses = os.listdir(pathMouse)
-  l_Ses.sort()
-  for f in l_Ses:
-    if f.startswith("Session"):
-      pathSession = pathMouse + f + '/'
-      print("\t Session: "+pathSession)
-      run_CaImAn_session(pathSession,suffix=suffix,use_parallel=use_parallel)
-      #return cnm, Cn, opts
+  if not sessions==None:
+      for s in range(sessions[0],sessions[-1]+1):
+          pathSession = pathMouse + "Session%02d/"%s
+          print("\t Session: "+pathSession)
+          run_CaImAn_session(pathSession,suffix=suffix,use_parallel=use_parallel)
+  #l_Ses = os.listdir(pathMouse)
+  #l_Ses.sort()
+  #for f in l_Ses:
+    #if f.startswith("Session"):
+      #pathSession = pathMouse + f + '/'
+      #print("\t Session: "+pathSession)
+      #run_CaImAn_session(pathSession,suffix=suffix,use_parallel=use_parallel)
+      ##return cnm, Cn, opts
   
 def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
     
@@ -64,8 +69,8 @@ def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
     ### %% set paths
     #pathSession = "/media/wollex/Analyze_AS3/Data/879/Session01/"
     #pathSession = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/M879/Session01"
-    sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
-    #sv_dir = "/home/aschmidt/Documents/Data/tmp/"
+    #sv_dir = "/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Data/tmp/"
+    sv_dir = "/home/aschmidt/Documents/Data/tmp/"
     fname = None
     for f in os.listdir(pathSession):
       if f.startswith("thy") or f.startswith("shank"):
@@ -144,7 +149,7 @@ def run_CaImAn_session(pathSession,suffix="",use_parallel=True):
             'cnn_lowest': 0.3,                  # neurons with cnn probability lower than this value are rejected
             
             #display
-            'show_movie': True,
+            'show_movie': False,
             'save_online_movie': False,
             'movie_name_online': "test_mp4v.avi"
     }

@@ -1,5 +1,5 @@
 
-import h5py, cv2
+import h5py, cv2, os
 import matplotlib.pyplot as plt
 
 def display_movie_h5(pathSession,fr=15):
@@ -9,13 +9,9 @@ def display_movie_h5(pathSession,fr=15):
         fname = pathSession + f
         if f.endswith('.h5'):
           break
-    print(fname)
     t_wait = int(1/fr*1000)
-    print(t_wait)
     with h5py.File(fname, "r") as f:
-        
         for t in range(f['DATA'].shape[0]):
-            
             frame=f['DATA'][t,:,:]
             cv2.imshow('frame', frame)
             #cv2.putText(frame, 'Frame = %d' % t, (5,20), fontFace=5, fontScale=0.8, color=(0, 255, 255), thickness=1)   #(frame.shape[1] // 2 - frame.shape[1] // 10, frame.shape[0]+10)
